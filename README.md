@@ -68,7 +68,7 @@ git clone [https://github.com/yourusername/sql-to-er.git](https://github.com/lby
 
 2. 前端启动
 ```bash
-cd sql-font
+cd sql-front
 npm install
 npm run dev
 ```
