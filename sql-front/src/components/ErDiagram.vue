@@ -7,12 +7,41 @@
           <i class="el-icon-connection"></i>
           <span>ER 图预览</span>
         </div>
-        <el-button type="success" @click="openExportDialog" :icon="Download">
-          导出图片
-        </el-button>
+        <div class="header-right">
+          <el-button type="primary" @click="autoLayout" style="margin-right: 10px" :icon="Refresh">
+            一键排版
+          </el-button>
+          <el-button type="success" @click="openExportDialog" :icon="Download">
+            导出图片
+          </el-button>
+        </div>
       </div>
     </template>
     <div class="diagram-wrapper">
+      <!-- 使用LayoutSettings组件 -->
+      <LayoutSettings 
+        v-model="showLayoutControls"
+        v-model:entitySpacing="entitySpacing"
+        v-model:attributeSpacing="attributeSpacing"
+        v-model:fontSize="fontSize"
+        v-model:backgroundColor="backgroundColor"
+        v-model:borderColor="borderColor"
+        v-model:textColor="textColor"
+        @spacing-change="handleSpacingChange"
+        @style-change="handleStyleChange"
+        @apply-styles="applyStyles"
+        @reset-styles="resetStyles"
+      />
+      
+      <el-button 
+        v-if="!showLayoutControls" 
+        class="layout-settings-button" 
+        size="small" 
+        @click="showLayoutControls = true"
+        :icon="Setting"
+      >
+        布局设置
+      </el-button>
       <div ref="diagramDiv" class="diagram-container"></div>
     </div>
     
@@ -26,20 +55,30 @@
 
 <script>
 import { ref, onMounted, nextTick } from 'vue'
-// import { Download } from '@element-plus/icons-vue'
+import { Download, Refresh, Setting } from '@element-plus/icons-vue'
 import * as go from 'gojs'
 import ExportDialog from './ExportDialog.vue'  // 导入 ExportDialog 组件
+import LayoutSettings from './LayoutSettings.vue'  // 导入 LayoutSettings 组件
+import DiagramLayout from '../utils/DiagramLayout'  // 导入布局工具类
 
 export default {
   name: 'ErDiagram',
   components: {
-    ExportDialog  // 注册组件
+    ExportDialog,
+    LayoutSettings
   },
   emits: ['export', 'open-export-dialog'],
   setup(props, { emit }) {
     const diagramDiv = ref(null)
     let myDiagram = null
     const isExportDialogVisible = ref(false)  // 添加对话框显示状态
+    const showLayoutControls = ref(false)     // 控制布局设置面板显示
+    const entitySpacing = ref(180)            // 实体间距默认值
+    const attributeSpacing = ref(100)         // 属性间距默认值
+    const fontSize = ref(16)                 // 字体大小默认值
+    const backgroundColor = ref('#ffffff')   // 背景颜色默认值
+    const borderColor = ref('#1890ff')        // 框线颜色默认值
+    const textColor = ref('#333333')         // 字体颜色默认值
 
     onMounted(async () => {
       await nextTick()
@@ -105,10 +144,20 @@ export default {
               $(go.Adornment, "Auto",
                 $(go.Shape, { fill: null, stroke: "blue", strokeWidth: 2 }),
                 $(go.Placeholder)
-              )
+              ),
+            locationSpot: go.Spot.Center
           },
+          new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
           $(go.Shape, "Rectangle",
-            { fill: "white", stroke: "#1890ff", strokeWidth: 2, width: 120, height: 60 }),
+            { 
+              fill: "white", 
+              stroke: "#1890ff", 
+              strokeWidth: 2, 
+              width: 120, 
+              height: 60 
+            },
+            new go.Binding("fill", "background"),
+            new go.Binding("stroke", "border")),
           $(go.TextBlock,
             { 
               margin: 8, 
@@ -116,7 +165,11 @@ export default {
               stroke: "#1890ff",
               editable: true
             },
-            new go.Binding("text", "name").makeTwoWay())
+            new go.Binding("text", "name").makeTwoWay(),
+            new go.Binding("font", "fontSize", function(size) {
+              return `bold ${size || 16}px 微软雅黑`;
+            }),
+            new go.Binding("stroke", "textColor"))
         ))
 
       // 定义属性节点模板（椭圆形）
@@ -128,15 +181,19 @@ export default {
               $(go.Adornment, "Auto",
                 $(go.Shape, { fill: null, stroke: "blue", strokeWidth: 2 }),
                 $(go.Placeholder)
-              )
+              ),
+            locationSpot: go.Spot.Center
           },
+          new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
           $(go.Shape, "Ellipse",
             { 
               fill: "white", 
               stroke: "#1890ff", 
               strokeWidth: 2,
               margin: 4
-            }),
+            },
+            new go.Binding("fill", "background"),
+            new go.Binding("stroke", "border")),
           $(go.TextBlock,
             { 
               margin: 8, 
@@ -145,7 +202,11 @@ export default {
               editable: true,
               _class: new go.Binding("_class", "isPrimaryKey", pk => pk ? "primary-key" : "")
             },
-            new go.Binding("text", "name").makeTwoWay())
+            new go.Binding("text", "name").makeTwoWay(),
+            new go.Binding("font", "fontSize", function(size) {
+              return `${size || 14}px 微软雅黑`;
+            }),
+            new go.Binding("stroke", "textColor"))
         ))
 
       // 定义关系节点模板（菱形）
@@ -159,7 +220,15 @@ export default {
               )
           },
           $(go.Shape, "Diamond",
-            { fill: "white", stroke: "#1890ff", strokeWidth: 2, width: 60, height: 60 }),
+            { 
+              fill: "white", 
+              stroke: "#1890ff", 
+              strokeWidth: 2, 
+              width: 60, 
+              height: 60 
+            },
+            new go.Binding("fill", "background"),
+            new go.Binding("stroke", "border")),
           $(go.TextBlock,
             { 
               margin: 8, 
@@ -167,7 +236,11 @@ export default {
               stroke: "#333",
               editable: true
             },
-            new go.Binding("text", "name").makeTwoWay())
+            new go.Binding("text", "name").makeTwoWay(),
+            new go.Binding("font", "fontSize", function(size) {
+              return `${size || 14}px 微软雅黑`;
+            }),
+            new go.Binding("stroke", "textColor"))
         ))
 
       // 定义连接线模板
@@ -187,14 +260,16 @@ export default {
             { 
               strokeWidth: 1.5, 
               stroke: "#1890ff"
-            }),
+            },
+            new go.Binding("stroke", "linkColor")),
           $(go.TextBlock,
               { 
                 segmentOffset: new go.Point(0, -10), 
                 font: "12px 微软雅黑",
                 editable: true
               },
-              new go.Binding("text", "text").makeTwoWay())
+              new go.Binding("text", "text").makeTwoWay(),
+              new go.Binding("stroke", "linkTextColor"))
         )
     }
 
@@ -348,13 +423,73 @@ export default {
       myDiagram.div.style.background = originalBackground
     }
 
+    // 使用布局工具类实现自动排版
+    const autoLayout = () => {
+      if (!myDiagram) return
+      
+      // 收集布局选项
+      const layoutOptions = {
+        entitySpacing: entitySpacing.value,
+        attributeSpacing: attributeSpacing.value,
+        fontSize: fontSize.value,
+        backgroundColor: backgroundColor.value,
+        borderColor: borderColor.value,
+        textColor: textColor.value
+      }
+      
+      // 调用布局工具类执行自动排版
+      DiagramLayout.autoLayout(myDiagram, layoutOptions)
+    }
+
+    const handleStyleChange = () => {
+      // 仅当用户点击"应用样式"按钮时才应用样式
+    }
+
+    const applyStyles = () => {
+      // 应用样式
+      autoLayout()
+      // 关闭设置面板
+      showLayoutControls.value = false
+    }
+
+    const resetStyles = () => {
+      // 重置样式到默认值
+      fontSize.value = 16
+      backgroundColor.value = '#ffffff'
+      borderColor.value = '#1890ff'
+      textColor.value = '#333333'
+      entitySpacing.value = 180
+      attributeSpacing.value = 100
+      autoLayout()
+    }
+
+    const handleSpacingChange = () => {
+      // 当滑动条值改变时，应用新的布局
+      autoLayout()
+    }
+
     return {
       diagramDiv,
       handleExport,
       updateDiagram,
       openExportDialog,
-      isExportDialogVisible,  // 暴露对话框显示状态
-      handleExportConfirm     // 暴露确认导出处理函数
+      isExportDialogVisible,
+      handleExportConfirm,
+      autoLayout,
+      Download,
+      Refresh,
+      Setting,
+      showLayoutControls,
+      entitySpacing,
+      attributeSpacing,
+      handleSpacingChange,
+      fontSize,
+      backgroundColor,
+      borderColor,
+      textColor,
+      handleStyleChange,
+      applyStyles,
+      resetStyles
     }
   }
 }
@@ -402,12 +537,25 @@ export default {
       color: #67c23a;
     }
   }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+  }
 }
 
 .diagram-wrapper {
   height: 100%;
   padding: 16px;
   background-color: #f8f9fa;
+  position: relative;
+}
+
+.layout-settings-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 9;
 }
 
 .diagram-container {
